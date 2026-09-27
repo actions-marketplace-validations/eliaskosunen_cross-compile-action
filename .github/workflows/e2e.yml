@@ -12,6 +12,10 @@ on:
 permissions:
     contents: read
 
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
 jobs:
     # Cross-compile the fixture for every host, target and compiler, and run it
     # through both CMAKE_CROSSCOMPILING_EMULATOR (ctest) and binfmt_misc (direct
