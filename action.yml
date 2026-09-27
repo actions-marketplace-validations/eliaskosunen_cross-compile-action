@@ -1,0 +1,107 @@
+name: Cross-compile and run with QEMU
+description:
+    Cross-compile C and C++ code with clang or GCC for another CPU architecture,
+    and run the result under QEMU
+author: Elias Kosunen
+
+branding:
+    icon: cpu
+    color: blue
+
+inputs:
+    target:
+        description:
+            Target triple (e.g. `armv7-linux-gnueabihf`, vendor optional) or
+            short name (e.g. `armv7`, `ppc64le`, `hppa`). See the README for the
+            list of supported targets.
+        required: true
+    compiler:
+        description:
+            '`auto`, `clang` or `gcc`. `auto` uses clang when the target
+            supports it, and GCC otherwise.'
+        required: false
+        default: auto
+    compiler-version:
+        description:
+            Major version of the compiler, e.g. `21` or `15`. Requires an
+            explicit `compiler`. Defaults to Ubuntu's default version.
+        required: false
+        default: ''
+    qemu-cpu:
+        description:
+            CPU model for QEMU (`QEMU_CPU`). Defaults to the target's baseline
+            CPU; `default` uses QEMU's own default instead.
+        required: false
+        default: ''
+    compile:
+        description:
+            Shell script (bash) to cross-compile the code. Runs on the host with
+            the toolchain environment set.
+        required: false
+        default: ''
+    run:
+        description:
+            Shell script (bash) to run the compiled code. Target executables can
+            be run directly; QEMU is invoked through binfmt_misc.
+        required: false
+        default: ''
+    working-directory:
+        description:
+            Working directory for `compile` and `run`, relative to the
+            workspace.
+        required: false
+        default: ''
+    container-image:
+        description:
+            Run the `run` script in this Docker image for the target
+            architecture (e.g. `debian:trixie`) instead of on the host. Binaries
+            need to be statically linked, or compatible with the image's C and
+            C++ libraries.
+        required: false
+        default: ''
+    container-options:
+        description:
+            Extra `docker run` arguments for `container-image`, one per line,
+            e.g. `--env` and `FOO=bar` on separate lines.
+        required: false
+        default: ''
+    export-env:
+        description:
+            Export the toolchain environment (`CC`, `CXX`,
+            `CMAKE_TOOLCHAIN_FILE`, `QEMU_LD_PREFIX`, ...) to later steps of the
+            job.
+        required: false
+        default: 'true'
+
+outputs:
+    triple:
+        description: Canonical target triple, e.g. `armv7-linux-gnueabihf`
+    gnu-triple:
+        description: Debian cross-compilation triple, e.g. `arm-linux-gnueabihf`
+    name:
+        description: Human-readable target name, e.g. `ARMv7 (hard-float)`
+    cmake-system-processor:
+        description: CMAKE_SYSTEM_PROCESSOR of the target (its `uname -m`)
+    sysroot:
+        description: Directory with the target's C and C++ libraries
+    compiler:
+        description: '`clang` or `gcc`'
+    compiler-version:
+        description: Major version of the compiler
+    cc:
+        description: C compiler command, including target flags
+    cxx:
+        description: C++ compiler command, including target flags
+    toolchain-file:
+        description: Path to the generated CMake toolchain file
+    meson-cross-file:
+        description: Path to the generated Meson cross file
+    qemu:
+        description:
+            Path to the qemu-user binary, empty if the target runs natively
+    qemu-cpu:
+        description: QEMU CPU model, empty for QEMU's default
+
+runs:
+    using: node24
+    main: dist/index.js

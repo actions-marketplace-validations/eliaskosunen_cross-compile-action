@@ -1,0 +1,3 @@
+option('expected_arch_macro', type: 'string')
+option('expected_pointer_size', type: 'string')
+option('expected_byte_order', type: 'combo', choices: ['little', 'big'], value: 'little')

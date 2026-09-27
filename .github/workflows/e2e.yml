@@ -1,0 +1,272 @@
+name: End-to-end
+
+on:
+    pull_request:
+        branches:
+            - master
+    push:
+        branches:
+            - master
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    # Cross-compile the fixture for every host, target and compiler, and run it
+    # through both CMAKE_CROSSCOMPILING_EMULATOR (ctest) and binfmt_misc (direct
+    # execution). The expected values come from here, not from the action's
+    # target table.
+    targets:
+        name:
+            ${{ matrix.target }} (${{ matrix.compiler }}, ubuntu-${{
+            matrix.ubuntu }})
+        runs-on: ubuntu-${{ matrix.ubuntu }}
+        strategy:
+            fail-fast: false
+            matrix:
+                ubuntu: ['24.04', '26.04']
+                compiler: [gcc, clang]
+                target:
+                    - armv5te-linux-gnueabi
+                    - armv6-linux-gnueabi
+                    - armv7-linux-gnueabihf
+                    - aarch64-linux-gnu
+                    - i686-linux-gnu
+                    - powerpc-linux-gnu
+                    - powerpc64-linux-gnu
+                    - powerpc64le-linux-gnu
+                    - riscv64-linux-gnu
+                    - s390x-linux-gnu
+                    - sparc64-linux-gnu
+                    - loongarch64-linux-gnu
+                    - m68k-linux-gnu
+                    - hppa-linux-gnu
+                    - alpha-linux-gnu
+                    - sh4-linux-gnu
+                    - mips-linux-gnu
+                    - mipsel-linux-gnu
+                    - mips64-linux-gnuabi64
+                    - mips64el-linux-gnuabi64
+                    - mipsisa32r6-linux-gnu
+                    - mipsisa32r6el-linux-gnu
+                    - mipsisa64r6-linux-gnuabi64
+                    - mipsisa64r6el-linux-gnuabi64
+                # prettier-ignore
+                include:
+                    - { target: armv5te-linux-gnueabi, macro: '__ARM_ARCH_5TE__', pointer-size: 4, byte-order: little }
+                    - { target: armv6-linux-gnueabi, macro: '__ARM_ARCH_6__', pointer-size: 4, byte-order: little }
+                    - { target: armv7-linux-gnueabihf, macro: '__ARM_ARCH_7A__', pointer-size: 4, byte-order: little }
+                    - { target: aarch64-linux-gnu, macro: '__aarch64__', pointer-size: 8, byte-order: little }
+                    - { target: i686-linux-gnu, macro: '__i386__', pointer-size: 4, byte-order: little }
+                    - { target: powerpc-linux-gnu, macro: '__powerpc__', pointer-size: 4, byte-order: big }
+                    - { target: powerpc64-linux-gnu, macro: '__powerpc64__', pointer-size: 8, byte-order: big }
+                    - { target: powerpc64le-linux-gnu, macro: '__powerpc64__', pointer-size: 8, byte-order: little }
+                    - { target: riscv64-linux-gnu, macro: '__riscv', pointer-size: 8, byte-order: little }
+                    - { target: s390x-linux-gnu, macro: '__s390x__', pointer-size: 8, byte-order: big }
+                    - { target: sparc64-linux-gnu, macro: '__sparc__', pointer-size: 8, byte-order: big }
+                    - { target: loongarch64-linux-gnu, macro: '__loongarch64', pointer-size: 8, byte-order: little }
+                    - { target: m68k-linux-gnu, macro: '__m68k__', pointer-size: 4, byte-order: big }
+                    - { target: hppa-linux-gnu, macro: '__hppa__', pointer-size: 4, byte-order: big }
+                    - { target: alpha-linux-gnu, macro: '__alpha__', pointer-size: 8, byte-order: little }
+                    - { target: sh4-linux-gnu, macro: '__sh__', pointer-size: 4, byte-order: little }
+                    - { target: mips-linux-gnu, macro: '__mips_isa_rev == 2 && _MIPS_SIM == _ABIO32', pointer-size: 4, byte-order: big }
+                    - { target: mipsel-linux-gnu, macro: '__mips_isa_rev == 2 && _MIPS_SIM == _ABIO32', pointer-size: 4, byte-order: little }
+                    - { target: mips64-linux-gnuabi64, macro: '__mips_isa_rev == 2 && _MIPS_SIM == _ABI64', pointer-size: 8, byte-order: big }
+                    - { target: mips64el-linux-gnuabi64, macro: '__mips_isa_rev == 2 && _MIPS_SIM == _ABI64', pointer-size: 8, byte-order: little }
+                    - { target: mipsisa32r6-linux-gnu, macro: '__mips_isa_rev == 6 && _MIPS_SIM == _ABIO32', pointer-size: 4, byte-order: big }
+                    - { target: mipsisa32r6el-linux-gnu, macro: '__mips_isa_rev == 6 && _MIPS_SIM == _ABIO32', pointer-size: 4, byte-order: little }
+                    - { target: mipsisa64r6-linux-gnuabi64, macro: '__mips_isa_rev == 6 && _MIPS_SIM == _ABI64', pointer-size: 8, byte-order: big }
+                    - { target: mipsisa64r6el-linux-gnuabi64, macro: '__mips_isa_rev == 6 && _MIPS_SIM == _ABI64', pointer-size: 8, byte-order: little }
+                # prettier-ignore
+                exclude:
+                    - { target: m68k-linux-gnu, compiler: clang }
+                    - { target: hppa-linux-gnu, compiler: clang }
+                    - { target: alpha-linux-gnu, compiler: clang }
+                    - { target: sh4-linux-gnu, compiler: clang }
+                    - { target: mips-linux-gnu, ubuntu: '26.04' }
+                    - { target: mipsel-linux-gnu, ubuntu: '26.04' }
+                    - { target: mips64-linux-gnuabi64, ubuntu: '26.04' }
+                    - { target: mips64el-linux-gnuabi64, ubuntu: '26.04' }
+                    - { target: mipsisa32r6-linux-gnu, ubuntu: '26.04' }
+                    - { target: mipsisa32r6el-linux-gnu, ubuntu: '26.04' }
+                    - { target: mipsisa64r6-linux-gnuabi64, ubuntu: '26.04' }
+                    - { target: mipsisa64r6el-linux-gnuabi64, ubuntu: '26.04' }
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v7
+
+            - name: Cross-compile and run
+              uses: ./
+              with:
+                  target: ${{ matrix.target }}
+                  compiler: ${{ matrix.compiler }}
+                  compile: |
+                      cmake -S test/fixture -B build -G Ninja \
+                        '-DEXPECTED_ARCH_MACRO=${{ matrix.macro }}' \
+                        -DEXPECTED_POINTER_SIZE=${{ matrix.pointer-size }} \
+                        -DEXPECTED_BYTE_ORDER=${{ matrix.byte-order }}
+                      cmake --build build
+                      file build/check_c build/check_cxx
+                  run: |
+                      ctest --test-dir build --output-on-failure
+                      ./build/check_c
+                      ./build/check_cxx
+
+    # Setup-only mode: the environment is used by later steps
+    #
+    # The host is a base matrix key and include rows only add keys, because act
+    # (used for local runs) handles other matrix layouts differently from GitHub
+    setup-only:
+        name: Setup only (${{ matrix.target }}, ubuntu-${{ matrix.ubuntu }})
+        runs-on: ubuntu-${{ matrix.ubuntu }}
+        strategy:
+            fail-fast: false
+            matrix:
+                ubuntu: ['24.04', '26.04']
+                target: [riscv64, hppa, mips64el]
+                # prettier-ignore
+                include:
+                    - { target: riscv64, macro: __riscv, pointer-size: 8, byte-order: little }
+                    - { target: hppa, macro: __hppa__, pointer-size: 4, byte-order: big }
+                    - { target: mips64el, macro: __mips64, pointer-size: 8, byte-order: little }
+                exclude:
+                    - { target: mips64el, ubuntu: '26.04' }
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v7
+
+            - name: Set up cross-compilation
+              id: cross
+              uses: ./
+              with:
+                  target: ${{ matrix.target }}
+
+            - name: CMake through CMAKE_TOOLCHAIN_FILE
+              run: |
+                  cmake -S test/fixture -B build-cmake -G Ninja \
+                    -DEXPECTED_ARCH_MACRO=${{ matrix.macro }} \
+                    -DEXPECTED_POINTER_SIZE=${{ matrix.pointer-size }} \
+                    -DEXPECTED_BYTE_ORDER=${{ matrix.byte-order }}
+                  cmake --build build-cmake
+                  ctest --test-dir build-cmake --output-on-failure
+
+            - name: Install Meson
+              run: sudo apt-get install -y -q --no-install-recommends meson
+
+            - name: Meson cross file
+              run: |
+                  meson setup build-meson test/fixture \
+                    --cross-file '${{ steps.cross.outputs.meson-cross-file }}' \
+                    -Dexpected_arch_macro=${{ matrix.macro }} \
+                    -Dexpected_pointer_size=${{ matrix.pointer-size }} \
+                    -Dexpected_byte_order=${{ matrix.byte-order }}
+                  meson test -C build-meson --print-errorlogs
+
+            - name: CC and CXX
+              run: |
+                  defines="-DARCH_CHECK=${{ matrix.macro }} -DEXPECTED_POINTER_SIZE=${{ matrix.pointer-size }} -DEXPECTED_BIG_ENDIAN=${{ matrix.byte-order == 'big' && 1 || 0 }}"
+                  # shellcheck disable=SC2086 # CC, CXX and defines hold several words on purpose
+                  {
+                  $CC $defines test/fixture/check.c -o check_c -lm -pthread
+                  $CXX $defines test/fixture/check.cpp -o check_cxx -pthread
+                  }
+                  ./check_c
+                  ./check_cxx
+
+    # Run the tests in a Docker image of the target architecture: statically
+    # linked in Debian (older glibc than the host's cross sysroot), dynamically
+    # linked in the host's Ubuntu release
+    container:
+        name:
+            Container (${{ matrix.target }}, ${{ matrix.linking }}, ubuntu-${{
+            matrix.ubuntu }})
+        runs-on: ubuntu-${{ matrix.ubuntu }}
+        strategy:
+            fail-fast: false
+            matrix:
+                ubuntu: ['24.04', '26.04']
+                target: [aarch64, mips64el]
+                linking: [static, dynamic]
+                # prettier-ignore
+                include:
+                    - { target: aarch64, debian-image: 'debian:trixie', macro: __aarch64__, machine: aarch64, qemu-cpu: cortex-a53 }
+                    # debian:trixie doesn't include mips64le, but the per-architecture repository does
+                    - { target: mips64el, debian-image: 'mips64le/debian:trixie', macro: __mips64, machine: mips64, qemu-cpu: MIPS64R2-generic }
+                    - { linking: static, linker-flags: -static }
+                exclude:
+                    - { target: mips64el, ubuntu: '26.04' }
+                    # There are no Ubuntu images for mips64el
+                    - { target: mips64el, linking: dynamic }
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v7
+
+            - name: Cross-compile and run
+              uses: ./
+              with:
+                  target: ${{ matrix.target }}
+                  container-image:
+                      ${{ matrix.linking == 'static' && matrix.debian-image ||
+                      format('ubuntu:{0}', matrix.ubuntu) }}
+                  container-options:
+                      --env=EXPECTED_MACHINE=${{ matrix.machine }}
+                  # Local runs with act share the workspace between these jobs,
+                  # so each one needs its own build directory
+                  compile: |
+                      build=build-${{ matrix.target }}-${{ matrix.linking }}
+                      cmake -S test/fixture -B "$build" -G Ninja \
+                        -DEXPECTED_ARCH_MACRO=${{ matrix.macro }} \
+                        -DEXPECTED_POINTER_SIZE=8 \
+                        -DEXPECTED_BYTE_ORDER=little \
+                        -DCMAKE_EXE_LINKER_FLAGS='${{ matrix.linker-flags }}'
+                      cmake --build "$build"
+                  run: |
+                      test "$(uname -m)" = "$EXPECTED_MACHINE"
+                      test "$QEMU_CPU" = '${{ matrix.qemu-cpu }}'
+                      ./build-${{ matrix.target }}-${{ matrix.linking }}/check_c
+                      ./build-${{ matrix.target }}-${{ matrix.linking }}/check_cxx
+
+    # Non-default compiler versions and QEMU CPUs. clang 21 on 24.04 and 23 on
+    # 26.04 come from apt.llvm.org.
+    versions:
+        name:
+            ${{ matrix.target }} (${{ matrix.compiler }} ${{ matrix.version }},
+            qemu-cpu '${{ matrix.qemu-cpu }}', ubuntu-${{ matrix.ubuntu }})
+        runs-on: ubuntu-${{ matrix.ubuntu }}
+        strategy:
+            fail-fast: false
+            matrix:
+                ubuntu: ['24.04', '26.04']
+                compiler: [gcc, clang]
+                # prettier-ignore
+                include:
+                    - { ubuntu: '24.04', compiler: gcc, version: 12, target: mips64el, macro: __mips64, pointer-size: 8, qemu-cpu: '', expected-qemu-cpu: MIPS64R2-generic }
+                    - { ubuntu: '24.04', compiler: clang, version: 21, target: aarch64, macro: __aarch64__, pointer-size: 8, qemu-cpu: default, expected-qemu-cpu: '' }
+                    - { ubuntu: '26.04', compiler: gcc, version: 14, target: aarch64, macro: __aarch64__, pointer-size: 8, qemu-cpu: '', expected-qemu-cpu: cortex-a53 }
+                    - { ubuntu: '26.04', compiler: clang, version: 23, target: armv7, macro: __ARM_ARCH_7A__, pointer-size: 4, qemu-cpu: cortex-a15, expected-qemu-cpu: cortex-a15 }
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v7
+
+            - name: Cross-compile and run
+              uses: ./
+              with:
+                  target: ${{ matrix.target }}
+                  compiler: ${{ matrix.compiler }}
+                  compiler-version: ${{ matrix.version }}
+                  qemu-cpu: ${{ matrix.qemu-cpu }}
+                  compile: |
+                      $CXX --version | grep -F ' ${{ matrix.version }}.'
+                      cmake -S test/fixture -B build -G Ninja \
+                        -DEXPECTED_ARCH_MACRO=${{ matrix.macro }} \
+                        -DEXPECTED_POINTER_SIZE=${{ matrix.pointer-size }} \
+                        -DEXPECTED_BYTE_ORDER=little
+                      cmake --build build
+                  run: |
+                      test "${QEMU_CPU:-}" = '${{ matrix.expected-qemu-cpu }}'
+                      ctest --test-dir build --output-on-failure
