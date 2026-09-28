@@ -51,7 +51,9 @@ export function selectCompiler(
                 "compiler-version requires an explicit compiler ('clang' or 'gcc'), because 'auto' may pick either",
             )
         }
-        return target.clang === 'supported' ? 'clang' : 'gcc'
+        return target.clang === 'supported' && target.clangBug === undefined
+            ? 'clang'
+            : 'gcc'
     }
     if (input === 'clang' && target.clang === 'unsupported') {
         throw new Error(
@@ -115,7 +117,7 @@ async function planGcc(
             ranlib: `${prefix}-gcc-ranlib-${version}`,
             strip: `${prefix}-strip`,
         },
-        flags: target.gccFlags,
+        flags: [...(target.compilerFlags ?? []), ...target.gccFlags],
     }
 }
 
@@ -147,7 +149,10 @@ async function planClang(
         compilerTarget: target.triple,
         // Older clang versions look for the linker by the LLVM triple
         // (e.g. armv7-linux-gnueabihf-ld) and fall back to the host's ld
-        flags: [`-B/usr/${target.gnuTriple}/bin`],
+        flags: [
+            `-B/usr/${target.gnuTriple}/bin`,
+            ...(target.compilerFlags ?? []),
+        ],
     }
 }
 

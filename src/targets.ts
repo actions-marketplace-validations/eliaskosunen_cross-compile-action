@@ -2,6 +2,14 @@ import type { Release } from './host.js'
 
 export type ClangSupport = 'supported' | 'experimental' | 'unsupported'
 
+/** A clang bug that makes `compiler: auto` pick GCC, and warns when an affected clang is used */
+export interface ClangBug {
+    /** Completes "clang <version> ..." */
+    description: string
+    /** First clang major version without the bug */
+    fixedIn: number
+}
+
 export interface Target {
     /** Canonical LLVM target triple, without a vendor component */
     triple: string
@@ -25,9 +33,12 @@ export interface Target {
     qemuCpu?: string
     /** `docker run --platform` value, or undefined when container mode isn't supported */
     dockerPlatform?: string
+    /** Extra flags for both GCC and clang */
+    compilerFlags?: string[]
     /** Extra flags for GCC; clang gets the same information from the triple */
     gccFlags: string[]
     clang: ClangSupport
+    clangBug?: ClangBug
     /** Host releases that have cross toolchains for the target; undefined means all of them */
     releases?: readonly Release[]
 }
@@ -68,8 +79,20 @@ function mips({ bits, endian, isaRevision }: MipsVariant): Target {
             bits === 64 && isaRevision === 2 && endian === 'little'
                 ? 'linux/mips64le'
                 : undefined,
+        // GOT entries are twice as large as on MIPS32, so large programs (e.g.
+        // C++ debug builds of test suites) overflow the 16-bit GOT offsets
+        compilerFlags: bits === 64 ? ['-mxgot'] : undefined,
         gccFlags: [],
         clang: 'supported',
+        // Release 6 requires unaligned loads to work, so the bug doesn't crash there
+        clangBug:
+            bits === 32 && isaRevision === 2
+                ? {
+                      description:
+                          "can emit unaligned loads at -O0, which crash with SIGBUS (e.g. libstdc++'s std::regex with a character class)",
+                      fixedIn: 20,
+                  }
+                : undefined,
         releases: ['24.04'],
     }
 }
@@ -145,7 +168,12 @@ export const targets: readonly Target[] = [
         mesonCpuFamily: 'x86',
         endian: 'little',
         qemu: null,
-        runtimePackages: ['libc6-i386', 'lib32stdc++6', 'lib32gcc-s1'],
+        runtimePackages: [
+            'libc6-i386',
+            'lib32stdc++6',
+            'lib32gcc-s1',
+            'lib32atomic1',
+        ],
         dockerPlatform: 'linux/386',
         gccFlags: [],
         clang: 'supported',

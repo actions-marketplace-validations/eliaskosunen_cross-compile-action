@@ -101,6 +101,16 @@ async function install(
 
     await apt.update()
     const plan = await planToolchain(target, compiler, inputs.compilerVersion)
+    const { clangBug } = target
+    if (
+        plan.compiler === 'clang' &&
+        clangBug !== undefined &&
+        Number(plan.version) < clangBug.fixedIn
+    ) {
+        core.warning(
+            `clang ${plan.version} ${clangBug.description} on ${target.name}. Use clang ${clangBug.fixedIn} or newer, or GCC.`,
+        )
+    }
     if (plan.needsLlvmRepository) {
         await apt.addLlvmRepository(plan.version, host.codename)
     }

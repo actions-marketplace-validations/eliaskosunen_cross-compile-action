@@ -28,6 +28,10 @@ UBUNTU=24.04 npm run e2e:local -- --matrix target:mips64el-linux-gnuabi64
 
 The whole workflow runs about 90 jobs and downloads the toolchains for each.
 
+Several act invocations of the same job running at once collide on container
+names and stop each other's containers. To run several subsets, pass multiple
+`--matrix` filters to one invocation instead.
+
 act handles some matrix layouts differently from GitHub, so in `e2e.yml` the
 host (`ubuntu`) is always a base matrix key, and `include` rows only add keys to
 existing combinations.

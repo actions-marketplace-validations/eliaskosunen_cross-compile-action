@@ -1,7 +1,10 @@
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <memory>
+#include <regex>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -37,6 +40,22 @@ int main()
     volatile double two = 2.0;
     if (std::abs(std::sqrt(two) * std::sqrt(two) - 2.0) > 1e-9) {
         std::cerr << "std::sqrt(2.0) returned " << std::sqrt(two) << '\n';
+        return 1;
+    }
+
+    // Needs libatomic on targets without atomic instructions of this size
+    std::atomic<std::uint64_t> counter{0};
+    counter.fetch_add(3);
+    const auto shared = std::make_shared<int>(1);
+    const auto copy = shared;
+    if (counter.load() != 3 || shared.use_count() != 2) {
+        std::cerr << "Atomic operations returned wrong results\n";
+        return 1;
+    }
+
+    // clang 18 and 19 compile this into unaligned loads on MIPS32r2 without optimizations
+    if (!std::regex_match("abc", std::regex("[[:alpha:]]+"))) {
+        std::cerr << "std::regex_match failed\n";
         return 1;
     }
 

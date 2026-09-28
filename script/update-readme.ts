@@ -19,7 +19,9 @@ const rows = targets.map((target) =>
         `\`${target.triple}\``,
         target.aliases.map((alias) => `\`${alias}\``).join(', '),
         target.name,
-        clang[target.clang],
+        target.clangBug !== undefined
+            ? `${clang[target.clang]} (not default)`
+            : clang[target.clang],
         (target.releases ?? releases).join(', '),
         target.qemu === null ? 'native' : (target.qemuCpu ?? 'QEMU default'),
         target.dockerPlatform !== undefined

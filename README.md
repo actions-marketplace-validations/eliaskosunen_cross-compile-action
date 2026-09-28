@@ -72,8 +72,9 @@ jobs:
 ```
 
 By default, the action uses clang, or GCC for targets that clang doesn't support
-(`hppa` above). To test both compilers, add `compiler: [clang, gcc]` to the
-matrix, and exclude the `clang` combinations of GCC-only targets.
+(`hppa` above) or has known bugs on. To test both compilers, add
+`compiler: [clang, gcc]` to the matrix, and exclude the `clang` combinations of
+GCC-only targets.
 
 ### MIPS
 
@@ -94,6 +95,14 @@ jobs:
                       cmake --build build
                   run: ctest --test-dir build --output-on-failure
 ```
+
+- On MIPS32 release 2 (`mips` and `mipsel`), clang 18 and 19 can emit unaligned
+  loads at `-O0`, which crash with SIGBUS, e.g. in libstdc++'s `std::regex`.
+  `compiler: auto` uses GCC for these targets, and older clang versions print a
+  warning. clang 20 works: set `compiler: clang` and `compiler-version: 20`.
+- On 64-bit MIPS, the action compiles with `-mxgot`, because large programs
+  would otherwise fail to link with
+  `relocation truncated to fit: R_MIPS_CALL16`.
 
 ### Separate build and test steps
 
@@ -172,7 +181,7 @@ repository `mips64le/debian:trixie` does.
 | Input               | Default          | Description                                                                                                     |
 | ------------------- | ---------------- | --------------------------------------------------------------------------------------------------------------- |
 | `target`            | (required)       | Target triple (e.g. `armv7-linux-gnueabihf`, vendor optional) or alias (e.g. `armv7`). See [Targets](#targets). |
-| `compiler`          | `auto`           | `clang`, `gcc`, or `auto`: clang if the target supports it, GCC otherwise.                                      |
+| `compiler`          | `auto`           | `clang`, `gcc`, or `auto`: clang if the target supports it without known bugs, GCC otherwise.                   |
 | `compiler-version`  | Ubuntu's default | Major version of the compiler, e.g. `22`. Requires `compiler` to be `clang` or `gcc`.                           |
 | `qemu-cpu`          | Target baseline  | CPU model for QEMU. `default` uses QEMU's own default. See [Emulated CPU](#emulated-cpu).                       |
 | `compile`           |                  | bash script that builds the code.                                                                               |
@@ -215,6 +224,13 @@ These are set for `compile` and `run`, and for the rest of the job unless
 | `QEMU_LD_PREFIX`        | Where QEMU finds the libraries of dynamically linked programs    |
 | `QEMU_CPU`              | Emulated CPU model                                               |
 
+The CMake toolchain file and the Meson cross file link libatomic when it's
+needed. Targets without 8-byte atomic instructions (e.g. ARMv5TE, 32-bit MIPS
+and 32-bit PowerPC) need it for `std::atomic<std::uint64_t>`, and ARMv5TE needs
+it for all atomic operations with clang, including those in `std::shared_ptr`.
+`CC` and `CXX` don't include it, so builds that use them directly need to add
+`-latomic` when linking.
+
 Because `CC` and `CXX` point to the cross compiler, later steps that build
 something for the runner itself should set their own compiler, or use
 `export-env: false`.
@@ -223,40 +239,41 @@ something for the runner itself should set their own compiler, or use
 
 <!-- targets:start -->
 
-| Triple                         | Aliases                             | Name                             | clang        | Ubuntu       | QEMU CPU         | Container platform |
-| ------------------------------ | ----------------------------------- | -------------------------------- | ------------ | ------------ | ---------------- | ------------------ |
-| `armv5te-linux-gnueabi`        | `armv5`, `armv5te`, `armel`         | ARMv5TE (soft-float)             | ✓            | 24.04, 26.04 | arm926           | `linux/arm/v5`     |
-| `armv6-linux-gnueabi`          | `armv6`                             | ARMv6 (soft-float)               | ✓            | 24.04, 26.04 | arm1176          | `linux/arm/v6`     |
-| `armv7-linux-gnueabihf`        | `armv7`, `armhf`                    | ARMv7 (hard-float)               | ✓            | 24.04, 26.04 | cortex-a8        | `linux/arm/v7`     |
-| `aarch64-linux-gnu`            | `aarch64`, `arm64`                  | AArch64                          | ✓            | 24.04, 26.04 | cortex-a53       | `linux/arm64`      |
-| `i686-linux-gnu`               | `i686`, `i386`, `x86`               | x86 (32-bit)                     | ✓            | 24.04, 26.04 | native           | `linux/386`        |
-| `powerpc-linux-gnu`            | `powerpc`, `ppc`                    | PowerPC (32-bit, big-endian)     | ✓            | 24.04, 26.04 | QEMU default     | ✗                  |
-| `powerpc64-linux-gnu`          | `powerpc64`, `ppc64`                | PowerPC 64 (big-endian)          | ✓            | 24.04, 26.04 | power7           | `linux/ppc64`      |
-| `powerpc64le-linux-gnu`        | `powerpc64le`, `ppc64le`, `ppc64el` | PowerPC 64 (little-endian)       | ✓            | 24.04, 26.04 | power9           | `linux/ppc64le`    |
-| `riscv64-linux-gnu`            | `riscv64`                           | RISC-V 64                        | ✓            | 24.04, 26.04 | QEMU default     | `linux/riscv64`    |
-| `s390x-linux-gnu`              | `s390x`                             | IBM Z (s390x)                    | ✓            | 24.04, 26.04 | QEMU default     | `linux/s390x`      |
-| `sparc64-linux-gnu`            | `sparc64`                           | SPARC 64                         | ✓            | 24.04, 26.04 | QEMU default     | ✗                  |
-| `loongarch64-linux-gnu`        | `loongarch64`, `loong64`            | LoongArch 64                     | ✓            | 24.04, 26.04 | QEMU default     | `linux/loong64`    |
-| `m68k-linux-gnu`               | `m68k`                              | Motorola 68000                   | experimental | 24.04, 26.04 | m68020           | ✗                  |
-| `hppa-linux-gnu`               | `hppa`, `parisc`                    | PA-RISC                          | ✗            | 24.04, 26.04 | QEMU default     | ✗                  |
-| `alpha-linux-gnu`              | `alpha`                             | Alpha                            | ✗            | 24.04, 26.04 | ev56             | ✗                  |
-| `sh4-linux-gnu`                | `sh4`                               | SuperH SH-4                      | ✗            | 24.04, 26.04 | QEMU default     | ✗                  |
-| `mips-linux-gnu`               | `mips`                              | MIPS32 release 2 (big-endian)    | ✓            | 24.04        | 24Kf             | ✗                  |
-| `mipsel-linux-gnu`             | `mipsel`                            | MIPS32 release 2 (little-endian) | ✓            | 24.04        | 24Kf             | ✗                  |
-| `mips64-linux-gnuabi64`        | `mips64`                            | MIPS64 release 2 (big-endian)    | ✓            | 24.04        | MIPS64R2-generic | ✗                  |
-| `mips64el-linux-gnuabi64`      | `mips64el`                          | MIPS64 release 2 (little-endian) | ✓            | 24.04        | MIPS64R2-generic | `linux/mips64le`   |
-| `mipsisa32r6-linux-gnu`        | `mips32r6`                          | MIPS32 release 6 (big-endian)    | ✓            | 24.04        | mips32r6-generic | ✗                  |
-| `mipsisa32r6el-linux-gnu`      | `mips32r6el`                        | MIPS32 release 6 (little-endian) | ✓            | 24.04        | mips32r6-generic | ✗                  |
-| `mipsisa64r6-linux-gnuabi64`   | `mips64r6`                          | MIPS64 release 6 (big-endian)    | ✓            | 24.04        | I6400            | ✗                  |
-| `mipsisa64r6el-linux-gnuabi64` | `mips64r6el`                        | MIPS64 release 6 (little-endian) | ✓            | 24.04        | I6400            | ✗                  |
+| Triple                         | Aliases                             | Name                             | clang           | Ubuntu       | QEMU CPU         | Container platform |
+| ------------------------------ | ----------------------------------- | -------------------------------- | --------------- | ------------ | ---------------- | ------------------ |
+| `armv5te-linux-gnueabi`        | `armv5`, `armv5te`, `armel`         | ARMv5TE (soft-float)             | ✓               | 24.04, 26.04 | arm926           | `linux/arm/v5`     |
+| `armv6-linux-gnueabi`          | `armv6`                             | ARMv6 (soft-float)               | ✓               | 24.04, 26.04 | arm1176          | `linux/arm/v6`     |
+| `armv7-linux-gnueabihf`        | `armv7`, `armhf`                    | ARMv7 (hard-float)               | ✓               | 24.04, 26.04 | cortex-a8        | `linux/arm/v7`     |
+| `aarch64-linux-gnu`            | `aarch64`, `arm64`                  | AArch64                          | ✓               | 24.04, 26.04 | cortex-a53       | `linux/arm64`      |
+| `i686-linux-gnu`               | `i686`, `i386`, `x86`               | x86 (32-bit)                     | ✓               | 24.04, 26.04 | native           | `linux/386`        |
+| `powerpc-linux-gnu`            | `powerpc`, `ppc`                    | PowerPC (32-bit, big-endian)     | ✓               | 24.04, 26.04 | QEMU default     | ✗                  |
+| `powerpc64-linux-gnu`          | `powerpc64`, `ppc64`                | PowerPC 64 (big-endian)          | ✓               | 24.04, 26.04 | power7           | `linux/ppc64`      |
+| `powerpc64le-linux-gnu`        | `powerpc64le`, `ppc64le`, `ppc64el` | PowerPC 64 (little-endian)       | ✓               | 24.04, 26.04 | power9           | `linux/ppc64le`    |
+| `riscv64-linux-gnu`            | `riscv64`                           | RISC-V 64                        | ✓               | 24.04, 26.04 | QEMU default     | `linux/riscv64`    |
+| `s390x-linux-gnu`              | `s390x`                             | IBM Z (s390x)                    | ✓               | 24.04, 26.04 | QEMU default     | `linux/s390x`      |
+| `sparc64-linux-gnu`            | `sparc64`                           | SPARC 64                         | ✓               | 24.04, 26.04 | QEMU default     | ✗                  |
+| `loongarch64-linux-gnu`        | `loongarch64`, `loong64`            | LoongArch 64                     | ✓               | 24.04, 26.04 | QEMU default     | `linux/loong64`    |
+| `m68k-linux-gnu`               | `m68k`                              | Motorola 68000                   | experimental    | 24.04, 26.04 | m68020           | ✗                  |
+| `hppa-linux-gnu`               | `hppa`, `parisc`                    | PA-RISC                          | ✗               | 24.04, 26.04 | QEMU default     | ✗                  |
+| `alpha-linux-gnu`              | `alpha`                             | Alpha                            | ✗               | 24.04, 26.04 | ev56             | ✗                  |
+| `sh4-linux-gnu`                | `sh4`                               | SuperH SH-4                      | ✗               | 24.04, 26.04 | QEMU default     | ✗                  |
+| `mips-linux-gnu`               | `mips`                              | MIPS32 release 2 (big-endian)    | ✓ (not default) | 24.04        | 24Kf             | ✗                  |
+| `mipsel-linux-gnu`             | `mipsel`                            | MIPS32 release 2 (little-endian) | ✓ (not default) | 24.04        | 24Kf             | ✗                  |
+| `mips64-linux-gnuabi64`        | `mips64`                            | MIPS64 release 2 (big-endian)    | ✓               | 24.04        | MIPS64R2-generic | ✗                  |
+| `mips64el-linux-gnuabi64`      | `mips64el`                          | MIPS64 release 2 (little-endian) | ✓               | 24.04        | MIPS64R2-generic | `linux/mips64le`   |
+| `mipsisa32r6-linux-gnu`        | `mips32r6`                          | MIPS32 release 6 (big-endian)    | ✓               | 24.04        | mips32r6-generic | ✗                  |
+| `mipsisa32r6el-linux-gnu`      | `mips32r6el`                        | MIPS32 release 6 (little-endian) | ✓               | 24.04        | mips32r6-generic | ✗                  |
+| `mipsisa64r6-linux-gnuabi64`   | `mips64r6`                          | MIPS64 release 6 (big-endian)    | ✓               | 24.04        | I6400            | ✗                  |
+| `mipsisa64r6el-linux-gnuabi64` | `mips64r6el`                        | MIPS64 release 6 (little-endian) | ✓               | 24.04        | I6400            | ✗                  |
 
 <!-- targets:end -->
 
 The triple can also be written with a vendor, e.g. `aarch64-unknown-linux-gnu`.
 
-- **clang**: "experimental" targets are only used when `compiler: clang` is set
-  explicitly. LLVM's M68k backend has produced wrong floating-point results in
-  testing.
+- **clang**: "experimental" and "not default" targets are only used when
+  `compiler: clang` is set explicitly. LLVM's M68k backend has produced wrong
+  floating-point results in testing. See [MIPS](#mips) for the "not default"
+  targets.
 - **i686** runs directly on the x86_64 runner, without QEMU.
 - **Container platform** is the Docker platform used with `container-image`.
   Targets without one don't support containers.

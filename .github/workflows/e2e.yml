@@ -82,6 +82,9 @@ jobs:
                     - { target: mipsisa32r6el-linux-gnu, macro: '__mips_isa_rev == 6 && _MIPS_SIM == _ABIO32', pointer-size: 4, byte-order: little }
                     - { target: mipsisa64r6-linux-gnuabi64, macro: '__mips_isa_rev == 6 && _MIPS_SIM == _ABI64', pointer-size: 8, byte-order: big }
                     - { target: mipsisa64r6el-linux-gnuabi64, macro: '__mips_isa_rev == 6 && _MIPS_SIM == _ABI64', pointer-size: 8, byte-order: little }
+                    # The default clang 18 miscompiles code on MIPS32r2
+                    - { target: mips-linux-gnu, compiler: clang, compiler-version: 20 }
+                    - { target: mipsel-linux-gnu, compiler: clang, compiler-version: 20 }
                 # prettier-ignore
                 exclude:
                     - { target: m68k-linux-gnu, compiler: clang }
@@ -106,11 +109,16 @@ jobs:
               with:
                   target: ${{ matrix.target }}
                   compiler: ${{ matrix.compiler }}
+                  compiler-version: ${{ matrix.compiler-version }}
+                  # The user flags check that they don't replace the toolchain's
+                  # flags and libraries
                   compile: |
                       cmake -S test/fixture -B build -G Ninja \
                         '-DEXPECTED_ARCH_MACRO=${{ matrix.macro }}' \
                         -DEXPECTED_POINTER_SIZE=${{ matrix.pointer-size }} \
-                        -DEXPECTED_BYTE_ORDER=${{ matrix.byte-order }}
+                        -DEXPECTED_BYTE_ORDER=${{ matrix.byte-order }} \
+                        -DCMAKE_C_FLAGS=-g -DCMAKE_CXX_FLAGS=-g \
+                        -DCMAKE_EXE_LINKER_FLAGS=-Wl,-O1
                       cmake --build build
                       file build/check_c build/check_cxx
                   run: |
@@ -129,13 +137,17 @@ jobs:
             fail-fast: false
             matrix:
                 ubuntu: ['24.04', '26.04']
-                target: [riscv64, hppa, mips64el]
+                target: [riscv64, hppa, mips, mips64el]
                 # prettier-ignore
                 include:
-                    - { target: riscv64, macro: __riscv, pointer-size: 8, byte-order: little }
-                    - { target: hppa, macro: __hppa__, pointer-size: 4, byte-order: big }
-                    - { target: mips64el, macro: __mips64, pointer-size: 8, byte-order: little }
+                    - { target: riscv64, macro: __riscv, pointer-size: 8, byte-order: little, compiler: clang }
+                    # No LLVM backend
+                    - { target: hppa, macro: __hppa__, pointer-size: 4, byte-order: big, compiler: gcc }
+                    # clang has a known bug on MIPS32r2
+                    - { target: mips, macro: __mips, pointer-size: 4, byte-order: big, compiler: gcc }
+                    - { target: mips64el, macro: __mips64, pointer-size: 8, byte-order: little, compiler: clang }
                 exclude:
+                    - { target: mips, ubuntu: '26.04' }
                     - { target: mips64el, ubuntu: '26.04' }
 
         steps:
@@ -147,6 +159,10 @@ jobs:
               uses: ./
               with:
                   target: ${{ matrix.target }}
+
+            - name: Default compiler
+              run: |
+                  test '${{ steps.cross.outputs.compiler }}' = '${{ matrix.compiler }}'
 
             - name: CMake through CMAKE_TOOLCHAIN_FILE
               run: |
@@ -175,7 +191,7 @@ jobs:
                   # shellcheck disable=SC2086 # CC, CXX and defines hold several words on purpose
                   {
                   $CC $defines test/fixture/check.c -o check_c -lm -pthread
-                  $CXX $defines test/fixture/check.cpp -o check_cxx -pthread
+                  $CXX $defines test/fixture/check.cpp -o check_cxx -pthread -latomic
                   }
                   ./check_c
                   ./check_cxx

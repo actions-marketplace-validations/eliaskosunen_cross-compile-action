@@ -157,7 +157,7 @@ describe('main', () => {
         expectSuccess()
         expect(execCalls()).toContain(
             'sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends ' +
-                'g++-15-i686-linux-gnu libc6-i386 lib32stdc++6 lib32gcc-s1',
+                'g++-15-i686-linux-gnu libc6-i386 lib32stdc++6 lib32gcc-s1 lib32atomic1',
         )
         expect(ensureBinfmt).not.toHaveBeenCalled()
         expect(exported().QEMU_LD_PREFIX).toBeUndefined()
@@ -332,6 +332,30 @@ describe('main', () => {
         await run()
         expect(core.setFailed).toHaveBeenCalledWith(
             "MIPS64 release 2 (little-endian) (mips64el-linux-gnuabi64) isn't available on Ubuntu 26.04. Use runs-on: ubuntu-24.04.",
+        )
+    })
+
+    it('warns about clang versions with a known bug', async () => {
+        osRelease.mockResolvedValue({ id: 'ubuntu', versionId: '24.04' })
+        aptState.packages.push('clang-18')
+        aptState.dependencies = { clang: 'clang-18', 'g++': 'g++-13' }
+        inputs = { target: 'mips', compiler: 'clang' }
+        await run()
+        expectSuccess()
+        expect(core.warning).toHaveBeenCalledWith(
+            expect.stringMatching(
+                /^clang 18 can emit unaligned loads .* on MIPS32 release 2 \(big-endian\)\. Use clang 20 or newer, or GCC\.$/,
+            ),
+        )
+    })
+
+    it("doesn't warn about clang versions without the bug", async () => {
+        osRelease.mockResolvedValue({ id: 'ubuntu', versionId: '24.04' })
+        inputs = { target: 'mips', compiler: 'clang', 'compiler-version': '20' }
+        await run()
+        expectSuccess()
+        expect(core.warning).not.toHaveBeenCalledWith(
+            expect.stringContaining('unaligned loads'),
         )
     })
 

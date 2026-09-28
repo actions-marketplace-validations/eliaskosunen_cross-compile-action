@@ -29776,8 +29776,29 @@ function compilerCommand(toolchain, compiler) {
         ...toolchain.flags,
     ];
 }
+/**
+ * Linked after the objects: 32-bit targets without 8-byte atomic instructions,
+ * and clang on ARMv5TE, call into libatomic for atomic operations.
+ * --as-needed keeps programs that don't use them from depending on it.
+ */
+const linkLibraries = [
+    '-Wl,--push-state,--as-needed',
+    '-latomic',
+    '-Wl,--pop-state',
+];
 function cmakeQuote(value) {
     return `"${value.replace(/[\\"$]/g, '\\$&')}"`;
+}
+/**
+ * The flags go in CMAKE_<LANG>_COMPILER_ARG1 rather than CMAKE_<LANG>_FLAGS_INIT,
+ * so that a user-provided -DCMAKE_<LANG>_FLAGS doesn't drop them.
+ * They're a single list element because CMake 3.18 and older only accept one.
+ */
+function cmakeCompiler(toolchain, compiler) {
+    if (toolchain.flags.length === 0) {
+        return cmakeQuote(compiler);
+    }
+    return cmakeQuote(`${compiler};${toolchain.flags.join(' ')}`);
 }
 function cmakeToolchainFile(setup) {
     const { target, toolchain, sysroot } = setup;
@@ -29788,17 +29809,14 @@ function cmakeToolchainFile(setup) {
         'set(CMAKE_SYSTEM_NAME Linux)',
         `set(CMAKE_SYSTEM_PROCESSOR ${cmakeQuote(target.cmakeProcessor)})`,
         '',
-        `set(CMAKE_C_COMPILER ${cmakeQuote(programs.cc)})`,
-        `set(CMAKE_CXX_COMPILER ${cmakeQuote(programs.cxx)})`,
+        `set(CMAKE_C_COMPILER ${cmakeCompiler(toolchain, programs.cc)})`,
+        `set(CMAKE_CXX_COMPILER ${cmakeCompiler(toolchain, programs.cxx)})`,
     ];
     if (toolchain.compilerTarget !== undefined) {
         lines.push(`set(CMAKE_C_COMPILER_TARGET ${cmakeQuote(toolchain.compilerTarget)})`, `set(CMAKE_CXX_COMPILER_TARGET ${cmakeQuote(toolchain.compilerTarget)})`);
     }
-    if (toolchain.flags.length > 0) {
-        const flags = cmakeQuote(toolchain.flags.join(' '));
-        lines.push(`set(CMAKE_C_FLAGS_INIT ${flags})`, `set(CMAKE_CXX_FLAGS_INIT ${flags})`);
-    }
-    lines.push(`set(CMAKE_AR ${cmakeQuote(programs.ar)})`, `set(CMAKE_RANLIB ${cmakeQuote(programs.ranlib)})`, `set(CMAKE_STRIP ${cmakeQuote(programs.strip)})`, '', 
+    const libraries = cmakeQuote(linkLibraries.join(' '));
+    lines.push(`set(CMAKE_C_STANDARD_LIBRARIES_INIT ${libraries})`, `set(CMAKE_CXX_STANDARD_LIBRARIES_INIT ${libraries})`, `set(CMAKE_AR ${cmakeQuote(programs.ar)})`, `set(CMAKE_RANLIB ${cmakeQuote(programs.ranlib)})`, `set(CMAKE_STRIP ${cmakeQuote(programs.strip)})`, '', 
     // Not CMAKE_SYSROOT: the Debian cross layout keeps headers and libraries
     // in /usr/<triple>/{include,lib}, which isn't a sysroot the compiler can use.
     `set(CMAKE_FIND_ROOT_PATH ${cmakeQuote(sysroot)})`, 'set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)', 'set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)', 'set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)', 'set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)');
@@ -29829,7 +29847,7 @@ function mesonCrossFile(setup) {
     if (emulator !== null) {
         lines.push(`exe_wrapper = ${mesonArray(emulator)}`);
     }
-    lines.push('', '[host_machine]', "system = 'linux'", `cpu_family = ${mesonString(target.mesonCpuFamily)}`, `cpu = ${mesonString(target.triple.split('-')[0])}`, `endian = ${mesonString(target.endian)}`);
+    lines.push('', '[built-in options]', `c_link_args = ${mesonArray(linkLibraries)}`, `cpp_link_args = ${mesonArray(linkLibraries)}`, '', '[host_machine]', "system = 'linux'", `cpu_family = ${mesonString(target.mesonCpuFamily)}`, `cpu = ${mesonString(target.triple.split('-')[0])}`, `endian = ${mesonString(target.endian)}`);
     return lines.join('\n') + '\n';
 }
 /** Environment for the `compile` and `run` scripts, and for later steps when exported */
@@ -29991,8 +30009,18 @@ function mips({ bits, endian, isaRevision }) {
         dockerPlatform: bits === 64 && isaRevision === 2 && endian === 'little'
             ? 'linux/mips64le'
             : undefined,
+        // GOT entries are twice as large as on MIPS32, so large programs (e.g.
+        // C++ debug builds of test suites) overflow the 16-bit GOT offsets
+        compilerFlags: bits === 64 ? ['-mxgot'] : undefined,
         gccFlags: [],
         clang: 'supported',
+        // Release 6 requires unaligned loads to work, so the bug doesn't crash there
+        clangBug: bits === 32 && isaRevision === 2
+            ? {
+                description: "can emit unaligned loads at -O0, which crash with SIGBUS (e.g. libstdc++'s std::regex with a character class)",
+                fixedIn: 20,
+            }
+            : undefined,
         releases: ['24.04'],
     };
 }
@@ -30067,7 +30095,12 @@ const targets = [
         mesonCpuFamily: 'x86',
         endian: 'little',
         qemu: null,
-        runtimePackages: ['libc6-i386', 'lib32stdc++6', 'lib32gcc-s1'],
+        runtimePackages: [
+            'libc6-i386',
+            'lib32stdc++6',
+            'lib32gcc-s1',
+            'lib32atomic1',
+        ],
         dockerPlatform: 'linux/386',
         gccFlags: [],
         clang: 'supported',
@@ -30267,7 +30300,9 @@ function selectCompiler(target, input, version) {
         if (version !== '') {
             throw new Error("compiler-version requires an explicit compiler ('clang' or 'gcc'), because 'auto' may pick either");
         }
-        return target.clang === 'supported' ? 'clang' : 'gcc';
+        return target.clang === 'supported' && target.clangBug === undefined
+            ? 'clang'
+            : 'gcc';
     }
     if (input === 'clang' && target.clang === 'unsupported') {
         throw new Error(`LLVM has no backend for ${target.name} (${target.triple}); use compiler: gcc`);
@@ -30317,7 +30352,7 @@ async function planGcc(target, requestedVersion) {
             ranlib: `${prefix}-gcc-ranlib-${version}`,
             strip: `${prefix}-strip`,
         },
-        flags: target.gccFlags,
+        flags: [...(target.compilerFlags ?? []), ...target.gccFlags],
     };
 }
 async function planClang(target, requestedVersion) {
@@ -30344,7 +30379,10 @@ async function planClang(target, requestedVersion) {
         compilerTarget: target.triple,
         // Older clang versions look for the linker by the LLVM triple
         // (e.g. armv7-linux-gnueabihf-ld) and fall back to the host's ld
-        flags: [`-B/usr/${target.gnuTriple}/bin`],
+        flags: [
+            `-B/usr/${target.gnuTriple}/bin`,
+            ...(target.compilerFlags ?? []),
+        ],
     };
 }
 async function planToolchain(target, compiler, requestedVersion) {
@@ -30420,6 +30458,12 @@ async function install(target, host, inputs) {
     }
     await update();
     const plan = await planToolchain(target, compiler, inputs.compilerVersion);
+    const { clangBug } = target;
+    if (plan.compiler === 'clang' &&
+        clangBug !== undefined &&
+        Number(plan.version) < clangBug.fixedIn) {
+        warning(`clang ${plan.version} ${clangBug.description} on ${target.name}. Use clang ${clangBug.fixedIn} or newer, or GCC.`);
+    }
     if (plan.needsLlvmRepository) {
         await addLlvmRepository(plan.version, host.codename);
     }

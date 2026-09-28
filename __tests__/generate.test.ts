@@ -96,7 +96,7 @@ describe('quoting', () => {
         setup.toolchain.compilerTarget = undefined
         setup.toolchain.flags = ['-DNAME="a b"', "-DQ='c'"]
         expect(cmakeToolchainFile(setup)).toContain(
-            'set(CMAKE_C_FLAGS_INIT "-DNAME=\\"a b\\" -DQ=\'c\'")',
+            'set(CMAKE_C_COMPILER "/usr/bin/clang-21;-DNAME=\\"a b\\" -DQ=\'c\'")',
         )
         expect(mesonCrossFile(setup)).toContain(
             "'-DNAME=\"a b\"', '-DQ=\\'c\\''",

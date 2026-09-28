@@ -45,6 +45,14 @@ describe('selectCompiler', () => {
         expect(selectCompiler(findTarget('m68k'), 'auto', '')).toBe('gcc')
     })
 
+    it("doesn't pick clang automatically for a target with a clang bug", () => {
+        expect(selectCompiler(findTarget('mips'), 'auto', '')).toBe('gcc')
+    })
+
+    it('allows clang explicitly for a target with a clang bug', () => {
+        expect(selectCompiler(findTarget('mips'), 'clang', '')).toBe('clang')
+    })
+
     it('allows an experimental LLVM backend explicitly', () => {
         expect(selectCompiler(findTarget('m68k'), 'clang', '')).toBe('clang')
     })
@@ -117,6 +125,17 @@ describe('planToolchain', () => {
             compilerTarget: 'armv7-linux-gnueabihf',
             flags: ['-B/usr/arm-linux-gnueabihf/bin'],
         })
+    })
+
+    it('adds the target flags for both compilers', async () => {
+        const target = findTarget('mips64el')
+        const gcc = await planToolchain(target, 'gcc', '13')
+        expect(gcc.flags).toEqual(['-mxgot'])
+        const clang = await planToolchain(target, 'clang', '')
+        expect(clang.flags).toEqual([
+            '-B/usr/mips64el-linux-gnuabi64/bin',
+            '-mxgot',
+        ])
     })
 
     it('needs apt.llvm.org for clang versions missing from Ubuntu', async () => {

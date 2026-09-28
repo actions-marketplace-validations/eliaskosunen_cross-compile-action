@@ -40,8 +40,31 @@ function compilerCommand(toolchain: Toolchain, compiler: string): string[] {
     ]
 }
 
+/**
+ * Linked after the objects: 32-bit targets without 8-byte atomic instructions,
+ * and clang on ARMv5TE, call into libatomic for atomic operations.
+ * --as-needed keeps programs that don't use them from depending on it.
+ */
+const linkLibraries = [
+    '-Wl,--push-state,--as-needed',
+    '-latomic',
+    '-Wl,--pop-state',
+]
+
 function cmakeQuote(value: string): string {
     return `"${value.replace(/[\\"$]/g, '\\$&')}"`
+}
+
+/**
+ * The flags go in CMAKE_<LANG>_COMPILER_ARG1 rather than CMAKE_<LANG>_FLAGS_INIT,
+ * so that a user-provided -DCMAKE_<LANG>_FLAGS doesn't drop them.
+ * They're a single list element because CMake 3.18 and older only accept one.
+ */
+function cmakeCompiler(toolchain: Toolchain, compiler: string): string {
+    if (toolchain.flags.length === 0) {
+        return cmakeQuote(compiler)
+    }
+    return cmakeQuote(`${compiler};${toolchain.flags.join(' ')}`)
 }
 
 export function cmakeToolchainFile(setup: Setup): string {
@@ -53,8 +76,8 @@ export function cmakeToolchainFile(setup: Setup): string {
         'set(CMAKE_SYSTEM_NAME Linux)',
         `set(CMAKE_SYSTEM_PROCESSOR ${cmakeQuote(target.cmakeProcessor)})`,
         '',
-        `set(CMAKE_C_COMPILER ${cmakeQuote(programs.cc)})`,
-        `set(CMAKE_CXX_COMPILER ${cmakeQuote(programs.cxx)})`,
+        `set(CMAKE_C_COMPILER ${cmakeCompiler(toolchain, programs.cc)})`,
+        `set(CMAKE_CXX_COMPILER ${cmakeCompiler(toolchain, programs.cxx)})`,
     ]
     if (toolchain.compilerTarget !== undefined) {
         lines.push(
@@ -62,14 +85,10 @@ export function cmakeToolchainFile(setup: Setup): string {
             `set(CMAKE_CXX_COMPILER_TARGET ${cmakeQuote(toolchain.compilerTarget)})`,
         )
     }
-    if (toolchain.flags.length > 0) {
-        const flags = cmakeQuote(toolchain.flags.join(' '))
-        lines.push(
-            `set(CMAKE_C_FLAGS_INIT ${flags})`,
-            `set(CMAKE_CXX_FLAGS_INIT ${flags})`,
-        )
-    }
+    const libraries = cmakeQuote(linkLibraries.join(' '))
     lines.push(
+        `set(CMAKE_C_STANDARD_LIBRARIES_INIT ${libraries})`,
+        `set(CMAKE_CXX_STANDARD_LIBRARIES_INIT ${libraries})`,
         `set(CMAKE_AR ${cmakeQuote(programs.ar)})`,
         `set(CMAKE_RANLIB ${cmakeQuote(programs.ranlib)})`,
         `set(CMAKE_STRIP ${cmakeQuote(programs.strip)})`,
@@ -116,6 +135,10 @@ export function mesonCrossFile(setup: Setup): string {
         lines.push(`exe_wrapper = ${mesonArray(emulator)}`)
     }
     lines.push(
+        '',
+        '[built-in options]',
+        `c_link_args = ${mesonArray(linkLibraries)}`,
+        `cpp_link_args = ${mesonArray(linkLibraries)}`,
         '',
         '[host_machine]',
         "system = 'linux'",
